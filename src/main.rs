@@ -1,10 +1,15 @@
-use chrono::Utc;
-use serial::prelude::*;
-use serial::{open, Error, SystemPort};
 use std::cmp::max;
 use std::io::Write;
+use std::thread;
 use std::time::Duration;
-use std::{error, thread};
+
+use bitvec::prelude::*;
+/// Thermal Printer from Adafruit interface
+///
+/// Port of the C++ library at https://github.com/adafruit/Adafruit-Thermal-Printer-Library/
+use chrono::Utc;
+use serial::prelude::*;
+use serial::SystemPort;
 
 type Dots = u8;
 type Columns = u8;
@@ -372,6 +377,32 @@ impl<const BAUDRATE: u32> Printer<BAUDRATE> {
         self.set_timeout(test_page_duration);
         Ok(())
     }
+
+    pub fn print_bitmap(&mut self, w: usize, h: usize, bitmap: &[u8]) -> Result<(), anyhow::Error> {
+        // modes are:
+        // 0 - 8dots single density, 102 dpi
+        // 1 - 8dots double density, 203 dpi
+        // 31 - 24dots single density, 102 dpi
+        // 32 - 24dots double density, 203 dpi
+
+        // bitmaps use MSB, MSB printed left, data sent first printed left
+        for chunk in bitmap.view_bits::<Msb0>().chunks(w).into_iter() {
+            let mut b = [0u8; 48];
+            for (idx, bit) in chunk.into_iter().enumerate() {
+                let byte = idx / 8;
+                let shift = 7 - idx % 8;
+                if *bit {
+                    b[byte] |= 1 << shift;
+                }
+            }
+            let w = (w + 7) / 8;
+            self.write_bytes(&[DC2, b'*', w as u8, 1])?;
+            self.write_bytes(&b[..w])?;
+        }
+        self.set_timeout(self.dot_print_time * h as u32);
+        self.last_byte = LF;
+        Ok(())
+    }
 }
 
 fn main() {
@@ -392,17 +423,20 @@ fn main() {
     // printer.cmd_feed(3).unwrap();
     // printer.wait();
 
-    printer
-        .print_barcode("123456789012", Barcode::UpcA)
-        .unwrap();
-    printer.write("\n---\n").unwrap();
-    printer.init().unwrap();
-    printer.write("\n---\n").unwrap();
-    printer.init().unwrap();
-    printer.write("\n---\n").unwrap();
-    for i in 0..5 {
-        printer.write(&format!("Hello world {}\n", i)).unwrap();
-    }
+    // printer
+    //     .print_barcode("123456789012", Barcode::UpcA)
+    //     .unwrap();
+    // printer.write("\n---\n").unwrap();
+    // printer.init().unwrap();
+    // printer.write("\n---\n").unwrap();
+    // printer.init().unwrap();
+    // printer.write("\n---\n").unwrap();
+    // for i in 0..5 {
+    //     printer.write(&format!("Hello world {}\n", i)).unwrap();
+    // }
+
+    printer.print_bitmap(384, 5, &[0xaa; 48 * 5]).unwrap();
+
     printer.cmd_feed(3).unwrap();
     printer.wait();
 
