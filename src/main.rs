@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use bitvec::prelude::*;
 use chrono::Utc;
+use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use serial::prelude::*;
 use serial::SystemPort;
 
@@ -390,6 +391,11 @@ impl<const BAUDRATE: u32> Printer<BAUDRATE> {
         );
 
         self.dot_print_time = Duration::from_millis(5);
+        bitmap.view_bits::<Msb0>()[..w * h]
+            .chunks(w)
+            .for_each(|row| {
+                println!("{:?}", row);
+            });
 
         // bitmaps use MSB, MSB printed left, data sent first printed left
         for chunk in bitmap.view_bits::<Msb0>()[..w * h]
@@ -397,7 +403,6 @@ impl<const BAUDRATE: u32> Printer<BAUDRATE> {
             .into_iter()
         {
             let brows = chunk.len() / w;
-            let bw_in_bytes = brows * w_in_bytes;
 
             println!("{:?}", &[DC2, b'*', brows as u8, w_in_bytes as u8]);
             self.write_bytes(&[DC2, b'*', brows as u8, w_in_bytes as u8])?;
@@ -412,8 +417,9 @@ impl<const BAUDRATE: u32> Printer<BAUDRATE> {
                     if *bit {
                         b[byte] |= 1 << shift;
                     }
+                    print!("{}", if *bit { "1" } else { "0" });
                 }
-                println!("{:?}", &b[..w_in_bytes]);
+                println!("");
                 self.write_bytes(&b[..w_in_bytes])?;
             }
 
@@ -514,9 +520,9 @@ fn main() {
     // printer.print_bitmap(7, 100, &[0xff; 100 * 100]).unwrap();
     // printer.print_bitmap(31, 100, &[0xff; 5 * 100]).unwrap();
     // printer.print_bitmap(33, 100, &[0xff; 5 * 100]).unwrap();
-    for _ in 0..10 {
-        printer.print_bitmap(80, 75, &adalogo).unwrap();
-    }
+    // for _ in 0..10 {
+    //     printer.print_bitmap(80, 75, &adalogo).unwrap();
+    // }
     // printer.print_bitmap(384, 100, &[0xff; 48 * 100]).unwrap();
     // printer
     //     .write_bytes(&[
@@ -532,7 +538,40 @@ fn main() {
     //     printer.wait();
     // }
 
-    printer.cmd_feed(3).unwrap();
+    // Read the font data.
+    let font = include_bytes!("../resources/Roboto-Regular.ttf") as &[u8];
+    // Parse it into the font type.
+    let font = fontdue::Font::from_bytes(font, fontdue::FontSettings::default()).unwrap();
+    let fonts = &[font];
+    // Rasterize and get the layout metrics for the letter 'g' at 17px.
+
+    let mut layout = Layout::new(CoordinateSystem::PositiveYUp);
+    layout.reset(&LayoutSettings {
+        ..LayoutSettings::default()
+    });
+    layout.append(fonts, &TextStyle::new("Hello ", 35.0, 0));
+    layout.append(fonts, &TextStyle::new("World", 40.0, 0));
+    println!("{:?}", layout.glyphs());
+
+    let (metrics, bitmap) = fonts[0].rasterize('g', 128.0);
+    // println!("{:?} {:?} {}", metrics, bitmap, bitmap.len());
+    let mut bv: BitVec<u8, Msb0> = bitmap.into_iter().map(|x| x > 128).collect();
+    bv.chunks(metrics.width).for_each(|x| {
+        println!("{:?}", x);
+    });
+    let f = bv.as_raw_slice();
+    println!(
+        "w: {}, h: {}, {:?}, {}",
+        metrics.width,
+        metrics.height,
+        f,
+        f.len(),
+    );
+
+    // printer
+    //     .print_bitmap(metrics.width, metrics.height, f)
+    //     .unwrap();
+    // printer.cmd_feed(2).unwrap();
     printer.wait();
 
     println!("{}: Finished text", Utc::now().time().to_string());

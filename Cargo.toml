@@ -9,4 +9,5 @@ edition = "2021"
 anyhow = { version = "1.0.64", default-features=false, features = ["std"] }
 bitvec = "1.0.1"
 chrono = "0.4.22"
+fontdue = "0.7.2"
 serial = "0.4.0"
