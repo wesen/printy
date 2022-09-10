@@ -5,9 +5,17 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "printy"
+
 [dependencies]
 anyhow = { version = "1.0.64", default-features=false, features = ["std"] }
 bitvec = "1.0.1"
 chrono = "0.4.22"
 fontdue = "0.7.2"
+image = "0.24.3"
+raqote = "0.8.1"
 serial = "0.4.0"
