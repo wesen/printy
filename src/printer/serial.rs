@@ -32,6 +32,7 @@ impl<const BAUDRATE: u32> UnixSerialPort<BAUDRATE> {
             settings.set_flow_control(serial::FlowControl::FlowSoftware);
             Ok(())
         })?;
+        port.set_timeout(Duration::from_millis(100000))?;
         Ok(Self { port })
     }
 }
@@ -45,8 +46,11 @@ impl<const BAUDRATE: u32> SerialPort for UnixSerialPort<BAUDRATE> {
     }
 
     fn wait(&mut self, d: Duration) -> Result<(), SerialError> {
-        println!("Waiting for {} ms", d.as_millis());
-        thread::sleep(d);
+        if d > Duration::from_millis(0) {
+            println!("Waiting for {} ms", d.as_millis());
+            thread::sleep(d);
+            println!("Finished waiting");
+        }
         Ok(())
     }
 }

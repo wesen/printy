@@ -1,8 +1,12 @@
+use bitvec::prelude::*;
 use chrono::Utc;
 use clap::{Parser, Subcommand};
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
-use printy::printer::{Barcode, Printer, SerialPort, UnixSerialPort};
+use image::imageops::{dither, BiLevel};
+use image::GenericImageView;
+use printy::printer::{Barcode, Dots, Printer, SerialPort, UnixSerialPort};
 use raqote::*;
+use std::iter::Map;
 use std::time::Duration;
 
 #[derive(Parser)]
@@ -57,6 +61,10 @@ enum Commands {
         barcode: String,
     },
     Logo {},
+    Image {
+        /// Image to print
+        image: String,
+    },
 }
 
 fn main() {
@@ -95,61 +103,66 @@ fn main() {
             print_logo(&mut printer);
             printer.wait();
         }
+        Commands::Image { image } => {
+            println!("{}: Printing image", Utc::now().to_string());
+            print_image(&mut printer, image);
+            printer.wait();
+        }
     }
 
-    // Read the font data.
-    let font = include_bytes!("../../resources/Roboto-Regular.ttf") as &[u8];
-    // Parse it into the font type.
-    let font = fontdue::Font::from_bytes(font, fontdue::FontSettings::default()).unwrap();
-    let fonts = &[font];
-    // Rasterize and get the layout metrics for the letter 'g' at 17px.
-
-    let mut layout = Layout::new(CoordinateSystem::PositiveYUp);
-    layout.reset(&LayoutSettings {
-        max_width: Some(384.0),
-        ..LayoutSettings::default()
-    });
-    layout.append(fonts, &TextStyle::new("Hello ", 35.0, 0));
-    layout.append(fonts, &TextStyle::new("World", 40.0, 0));
-
-    println!("lines: {:?}", layout.lines());
-
-    for glyph in layout.glyphs() {
-        let (metrics, coverage) = fonts[0].rasterize_config(glyph.key);
-        println!("Glyph: {:?}", glyph);
-        println!("Metrics: {:?}", metrics);
-    }
-
-    let mut dt = DrawTarget::new(384, 400);
-    let mut pb = PathBuilder::new();
-    pb.move_to(100., 10.);
-    pb.cubic_to(150., 40., 175., 0., 200., 10.);
-    pb.quad_to(120., 100., 80., 200.);
-    pb.quad_to(150., 180., 300., 300.);
-    pb.close();
-    let path = pb.finish();
-    let gradient = Source::new_radial_gradient(
-        Gradient {
-            stops: vec![
-                GradientStop {
-                    position: 0.2,
-                    color: Color::new(0xff, 0, 0xff, 0),
-                },
-                GradientStop {
-                    position: 0.8,
-                    color: Color::new(0xff, 0xff, 0xff, 0xff),
-                },
-                GradientStop {
-                    position: 1.,
-                    color: Color::new(0xff, 0xff, 0, 0xff),
-                },
-            ],
-        },
-        Point::new(150., 150.),
-        128.,
-        Spread::Pad,
-    );
-    dt.fill(&path, &gradient, &DrawOptions::new());
+    // // Read the font data.
+    // let font = include_bytes!("../../resources/Roboto-Regular.ttf") as &[u8];
+    // // Parse it into the font type.
+    // let font = fontdue::Font::from_bytes(font, fontdue::FontSettings::default()).unwrap();
+    // let fonts = &[font];
+    // // Rasterize and get the layout metrics for the letter 'g' at 17px.
+    //
+    // let mut layout = Layout::new(CoordinateSystem::PositiveYUp);
+    // layout.reset(&LayoutSettings {
+    //     max_width: Some(384.0),
+    //     ..LayoutSettings::default()
+    // });
+    // layout.append(fonts, &TextStyle::new("Hello ", 35.0, 0));
+    // layout.append(fonts, &TextStyle::new("World", 40.0, 0));
+    //
+    // println!("lines: {:?}", layout.lines());
+    //
+    // for glyph in layout.glyphs() {
+    //     let (metrics, coverage) = fonts[0].rasterize_config(glyph.key);
+    //     println!("Glyph: {:?}", glyph);
+    //     println!("Metrics: {:?}", metrics);
+    // }
+    //
+    // let mut dt = DrawTarget::new(384, 400);
+    // let mut pb = PathBuilder::new();
+    // pb.move_to(100., 10.);
+    // pb.cubic_to(150., 40., 175., 0., 200., 10.);
+    // pb.quad_to(120., 100., 80., 200.);
+    // pb.quad_to(150., 180., 300., 300.);
+    // pb.close();
+    // let path = pb.finish();
+    // let gradient = Source::new_radial_gradient(
+    //     Gradient {
+    //         stops: vec![
+    //             GradientStop {
+    //                 position: 0.2,
+    //                 color: Color::new(0xff, 0, 0xff, 0),
+    //             },
+    //             GradientStop {
+    //                 position: 0.8,
+    //                 color: Color::new(0xff, 0xff, 0xff, 0xff),
+    //             },
+    //             GradientStop {
+    //                 position: 1.,
+    //                 color: Color::new(0xff, 0xff, 0, 0xff),
+    //             },
+    //         ],
+    //     },
+    //     Point::new(150., 150.),
+    //     128.,
+    //     Spread::Pad,
+    // );
+    // dt.fill(&path, &gradient, &DrawOptions::new());
     // BGRA
     // let buf: ImageBuffer<image::Pixel> = ImageBuffer::from_raw(384, 400, dt.get_data_u8()).unwrap();
 
@@ -163,6 +176,48 @@ fn main() {
     // final linefeeds
     printer.cmd_feed(cli.feed.unwrap_or(3)).unwrap();
     printer.wait();
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum Image {
+    GrayImage { image: image::GrayImage },
+}
+
+impl Image {
+    pub fn to_bitvec(&self) -> BitVec<u8, Msb0> {
+        match self {
+            Image::GrayImage { image } => {
+                let mut bv = BitVec::new();
+                for pixel in image.pixels() {
+                    bv.push(pixel.0[0] < 128);
+                }
+                bv
+            }
+        }
+    }
+}
+
+fn print_image<P: SerialPort>(printer: &mut Printer<P>, image: &String) {
+    let img = image::open(image).unwrap();
+    let (mut w, mut h) = img.dimensions();
+    if w > 384 {
+        h = h * 384 / w;
+        w = 384;
+    }
+    let mut img = img
+        .resize(w, h, image::imageops::FilterType::Nearest)
+        .into_luma8();
+    println!("dimensions {:?}", img.dimensions());
+    dither(&mut img, &BiLevel);
+    println!(
+        "dimensions {\
+    :?}",
+        img.dimensions()
+    );
+    let bv = Image::GrayImage { image: img }.to_bitvec();
+    printer
+        .print_bitmap(w as Dots, h as Dots, bv.as_raw_slice())
+        .unwrap();
 }
 
 fn print_logo<P: SerialPort>(printer: &mut Printer<P>) {

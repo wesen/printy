@@ -40,7 +40,7 @@ impl<P: SerialPort> Printer<P> {
             barcode_height: 50,
             max_chunk_height: 255,
             firmware_version: 268,
-            dot_print_time: Duration::from_millis(20),
+            dot_print_time: Duration::from_millis(25),
             dot_feed_time: Duration::from_micros(2100),
         };
 
@@ -265,7 +265,7 @@ impl<P: SerialPort> Printer<P> {
 
     #[cfg(feature = "bitvec")]
     pub fn print_bitmap(&mut self, w: Dots, h: Dots, bitmap: &[u8]) -> Result<(), anyhow::Error> {
-        const CHUNK_SIZE: usize = 512;
+        const CHUNK_SIZE: usize = 4192 * 2;
         let w_in_bytes = (w + 7) / 8;
         let max_rows_in_chunk = (CHUNK_SIZE * 8) / w;
 
@@ -274,25 +274,39 @@ impl<P: SerialPort> Printer<P> {
             w, h, w_in_bytes, max_rows_in_chunk
         );
 
-        self.dot_print_time = Duration::from_millis(5);
+        // self.dot_print_time = Duration::from_millis(5);
         bitmap.view_bits::<Msb0>()[..w * h]
             .chunks(w)
             .for_each(|row| {
                 println!("{:?}", row);
             });
 
+        let max_rows_in_chunk = 200;
+
         // bitmaps use MSB, MSB printed left, data sent first printed left
-        for chunk in bitmap.view_bits::<Msb0>()[..w * h]
+        for (i, chunk) in bitmap.view_bits::<Msb0>()[..w * h]
             .chunks(max_rows_in_chunk * w)
             .into_iter()
+            .enumerate()
         {
+            println!("chunk {}", i);
             let brows = chunk.len() / w;
 
             println!("{:?}", &[DC2, b'*', brows as u8, w_in_bytes as u8]);
-            self.write_bytes(&[DC2, b'*', brows as u8, w_in_bytes as u8])?;
+            // self.write_bytes(&[DC2, b'*', brows as u8, w_in_bytes as u8])?;
+            self.write_bytes(&[
+                GS,
+                b'v',
+                0,
+                0,
+                w_in_bytes as u8,
+                0,
+                (brows & 0xFF) as u8,
+                (brows >> 8) as u8,
+            ])?;
             let mut iter = chunk.into_iter();
 
-            for _ in 0..brows {
+            for row in 0..brows {
                 let mut b = [0u8; 48];
                 for idx in 0..w {
                     let bit = iter.next().unwrap();
@@ -301,13 +315,20 @@ impl<P: SerialPort> Printer<P> {
                     if *bit {
                         b[byte] |= 1 << shift;
                     }
-                    print!("{}", if *bit { "1" } else { "0" });
+                    // print!("{}", if *bit { "1" } else { "0" });
                 }
-                println!("");
+                // println!("");
+                // println!("{:?}", &b[..w_in_bytes]);
+                println!("row {}/{}", row, brows);
                 self.write_bytes(&b[..w_in_bytes])?;
+                // self.set_timeout(self.dot_feed_time * w_in_bytes as u32);
+                // self.wait();
+                self.set_timeout(Duration::from_millis(20));
             }
 
-            self.set_timeout(self.dot_print_time * brows as u32);
+            let chunk_duration = self.dot_print_time * brows as u32;
+            println!("chunk duration: {} ms", chunk_duration.as_millis());
+            // self.set_timeout(chunk_duration * 1);
         }
 
         self.last_byte = LF;

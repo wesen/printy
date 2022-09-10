@@ -9,8 +9,8 @@ pub use crate::printer::serial::{SerialPort, UnixSerialPort};
 ///
 /// Port of the C++ library at https://github.com/adafruit/Adafruit-Thermal-Printer-Library/
 
-type Dots = usize;
-type Columns = u8;
+pub type Dots = usize;
+pub type Columns = u8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum Underline {
