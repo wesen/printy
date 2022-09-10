@@ -281,7 +281,7 @@ impl<P: SerialPort> Printer<P> {
                 println!("{:?}", row);
             });
 
-        let max_rows_in_chunk = 200;
+        let max_rows_in_chunk = 30;
 
         // bitmaps use MSB, MSB printed left, data sent first printed left
         for (i, chunk) in bitmap.view_bits::<Msb0>()[..w * h]
@@ -293,17 +293,7 @@ impl<P: SerialPort> Printer<P> {
             let brows = chunk.len() / w;
 
             println!("{:?}", &[DC2, b'*', brows as u8, w_in_bytes as u8]);
-            // self.write_bytes(&[DC2, b'*', brows as u8, w_in_bytes as u8])?;
-            self.write_bytes(&[
-                GS,
-                b'v',
-                0,
-                0,
-                w_in_bytes as u8,
-                0,
-                (brows & 0xFF) as u8,
-                (brows >> 8) as u8,
-            ])?;
+            self.write_bytes(&[DC2, b'*', brows as u8, w_in_bytes as u8])?;
             let mut iter = chunk.into_iter();
 
             for row in 0..brows {
@@ -323,12 +313,12 @@ impl<P: SerialPort> Printer<P> {
                 self.write_bytes(&b[..w_in_bytes])?;
                 // self.set_timeout(self.dot_feed_time * w_in_bytes as u32);
                 // self.wait();
-                self.set_timeout(Duration::from_millis(20));
+                // self.set_timeout(self.dot_print_time);
             }
 
             let chunk_duration = self.dot_print_time * brows as u32;
             println!("chunk duration: {} ms", chunk_duration.as_millis());
-            // self.set_timeout(chunk_duration * 1);
+            self.set_timeout(chunk_duration * 1);
         }
 
         self.last_byte = LF;
