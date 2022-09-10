@@ -1,15 +1,14 @@
+use crate::printer::serial::SerialPort;
 use crate::printer::{Barcode, Columns, Dots, Underline, CR, DC2, ESC, FF, GS, LF};
-use crate::{SerialPort, SerialPortSettings};
 use bitvec::order::Msb0;
 use bitvec::view::BitView;
-use serial::SystemPort;
 use std::cmp::max;
 use std::io::Write;
 use std::thread;
 use std::time::Duration;
 
-pub struct Printer<const BAUDRATE: u32 = 19200> {
-    port: SystemPort,
+pub struct Printer<P: SerialPort> {
+    port: P,
     // TODO(manuel) Might be better to make this a deadline, really
     timeout: Duration,
 
@@ -27,15 +26,8 @@ pub struct Printer<const BAUDRATE: u32 = 19200> {
     dot_feed_time: Duration,
 }
 
-impl<const BAUDRATE: u32> Printer<BAUDRATE> {
-    // a byte is 11 bits. There is no real flow control (although we do use XON/XOFF flow control
-    // on unix, so we have to wait an estimation of the time to transmit the bytes over serial.
-    // I am not sure what this will be on the hardware itself, since we will have to wait for the
-    // peripheral to transmit anyway
-    pub const BYTE_DURATION: Duration =
-        Duration::from_micros(((11 * 1000000) + BAUDRATE / 2) as u64 / BAUDRATE as u64);
-
-    pub fn new(port: SystemPort) -> Result<Self, anyhow::Error> {
+impl<P: SerialPort> Printer<P> {
+    pub fn new(port: P) -> Result<Self, anyhow::Error> {
         let mut f = Self {
             port,
             timeout: Duration::from_millis(0),
@@ -52,14 +44,6 @@ impl<const BAUDRATE: u32> Printer<BAUDRATE> {
             dot_feed_time: Duration::from_micros(2100),
         };
 
-        f.port.reconfigure(&|settings| {
-            settings.set_baud_rate(serial::Baud19200)?;
-            settings.set_char_size(serial::Bits8);
-            settings.set_parity(serial::ParityNone);
-            settings.set_stop_bits(serial::Stop1);
-            settings.set_flow_control(serial::FlowControl::FlowSoftware);
-            Ok(())
-        })?;
         // first command should wait a bit
         f.set_timeout(Duration::from_millis(500));
 
@@ -100,8 +84,7 @@ impl<const BAUDRATE: u32> Printer<BAUDRATE> {
     }
 
     pub fn wait(&mut self) {
-        println!("Waiting for {} ms", self.timeout.as_millis());
-        thread::sleep(self.timeout);
+        self.port.wait(self.timeout).unwrap();
         self.timeout = Duration::from_millis(0);
     }
 
@@ -118,8 +101,7 @@ impl<const BAUDRATE: u32> Printer<BAUDRATE> {
 
     pub fn write_bytes(&mut self, cmd: &[u8]) -> Result<(), anyhow::Error> {
         self.wait();
-        self.port.write(cmd)?;
-        // self.set_timeout(Self::BYTE_DURATION * cmd.len() as u32);
+        self.port.write_bytes(cmd)?;
         Ok(())
     }
 
@@ -154,9 +136,8 @@ impl<const BAUDRATE: u32> Printer<BAUDRATE> {
             return Ok(());
         }
 
-        self.wait();
-        self.port.write(&[c as u8])?;
-        let mut d = Self::BYTE_DURATION;
+        self.write_bytes(&[c])?;
+        let mut d = self.timeout;
 
         if c == LF || self.last_column >= self.max_column {
             d += if self.last_byte == LF {
@@ -183,6 +164,10 @@ impl<const BAUDRATE: u32> Printer<BAUDRATE> {
     }
 
     pub fn cmd_feed(&mut self, lines: u8) -> Result<(), anyhow::Error> {
+        if lines == 0 {
+            return Ok(());
+        }
+
         if self.firmware_version >= 264 {
             self.write_bytes(&[ESC, b'd', lines])?;
             self.set_timeout(self.dot_feed_time * self.char_height as u32);
@@ -249,8 +234,7 @@ impl<const BAUDRATE: u32> Printer<BAUDRATE> {
         break_time: Duration,
     ) -> Result<(), anyhow::Error> {
         let break_time: u8 = (break_time.as_micros() / 250).try_into()?;
-        self.port
-            .write(&[27, '#' as u8, density | ((break_time & 0x7) << 5)])?;
+        self.write_bytes(&[27, '#' as u8, density | ((break_time & 0x7) << 5)])?;
         thread::sleep(Duration::from_millis(1));
         Ok(())
     }
@@ -261,7 +245,7 @@ impl<const BAUDRATE: u32> Printer<BAUDRATE> {
             Underline::Single => 1,
             Underline::Double => 2,
         };
-        self.port.write(&[ESC, '-' as u8, underline])?;
+        self.write_bytes(&[ESC, '-' as u8, underline])?;
         thread::sleep(Duration::from_millis(1));
         Ok(())
     }
@@ -279,6 +263,7 @@ impl<const BAUDRATE: u32> Printer<BAUDRATE> {
         Ok(())
     }
 
+    #[cfg(feature = "bitvec")]
     pub fn print_bitmap(&mut self, w: Dots, h: Dots, bitmap: &[u8]) -> Result<(), anyhow::Error> {
         const CHUNK_SIZE: usize = 512;
         let w_in_bytes = (w + 7) / 8;

@@ -1,4 +1,9 @@
-pub mod printer;
+mod printer;
+
+use clap::ValueEnum;
+pub use printer::Printer;
+mod serial;
+pub use crate::printer::serial::{SerialPort, UnixSerialPort};
 
 /// Thermal Printer from Adafruit interface
 ///
@@ -7,12 +12,14 @@ pub mod printer;
 type Dots = usize;
 type Columns = u8;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum Underline {
     None,
     Single,
     Double,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum Charset {
     Usa = 0,
     France = 1,
@@ -32,6 +39,7 @@ pub enum Charset {
     China = 15,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum CodePage {
     Cp437C = 0,
     Katakana = 1,
@@ -79,6 +87,7 @@ pub enum CodePage {
     Cp874 = 47,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum Barcode {
     UpcA,
     UpcE,

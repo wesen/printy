@@ -8,14 +8,24 @@ edition = "2021"
 [lib]
 path = "src/lib.rs"
 
+[features]
+default = ["bitvec", "image", "raqote", "font", "build-binary"]
+build-binary = ["dep:clap"]
+bitvec = ["dep:bitvec"]
+image = ["dep:image", "bitvec"]
+raqote = ["dep:raqote", "image"]
+font = ["dep:fontdue", "raqote"]
+
 [[bin]]
 name = "printy"
+required-features = ["build-binary"]
 
 [dependencies]
-anyhow = { version = "1.0.64", default-features=false, features = ["std"] }
-bitvec = "1.0.1"
+anyhow = { version = "1.0.64", default-features = false, features = ["std"] }
 chrono = "0.4.22"
-fontdue = "0.7.2"
-image = "0.24.3"
-raqote = "0.8.1"
+bitvec = { version = "1.0.1", optional = true }
+fontdue = {version = "0.7.2", optional = true }
+image = {version = "0.24.3", optional = true }
+raqote = {version = "0.8.1", optional = true }
 serial = "0.4.0"
+clap = { version = "3.2.20", optional = true, features=["derive"] }
