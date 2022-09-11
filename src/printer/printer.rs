@@ -7,6 +7,9 @@ use std::io::Write;
 use std::thread;
 use std::time::Duration;
 
+// TODO create iterator API for interrupt/callback driven printing
+// TODO add async API
+
 pub struct Printer<P: SerialPort> {
     port: P,
     // TODO(manuel) Might be better to make this a deadline, really
@@ -323,12 +326,12 @@ impl<P: SerialPort> Printer<P> {
                 self.write_bytes(&b[..w_in_bytes])?;
                 // self.set_timeout(self.dot_feed_time * w_in_bytes as u32);
                 // self.wait();
-                self.set_timeout(Duration::from_millis(20));
+                // self.set_timeout(Duration::from_millis(20));
             }
 
             let chunk_duration = self.dot_print_time * brows as u32;
             println!("chunk duration: {} ms", chunk_duration.as_millis());
-            // self.set_timeout(chunk_duration * 1);
+            self.set_timeout(chunk_duration * 1);
         }
 
         self.last_byte = LF;

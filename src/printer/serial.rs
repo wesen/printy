@@ -1,3 +1,4 @@
+use serial::core::SerialDevice;
 use serial::SerialPort as unix_SerialPort;
 use serial::SystemPort;
 use std::io::Write;
@@ -32,14 +33,21 @@ impl<const BAUDRATE: u32> UnixSerialPort<BAUDRATE> {
             settings.set_flow_control(serial::FlowControl::FlowSoftware);
             Ok(())
         })?;
-        port.set_timeout(Duration::from_millis(100000))?;
+        <SystemPort as serial::SerialPort>::set_timeout(&mut port, Duration::from_millis(100))?;
+
+        let settings = port.read_settings()?;
+        println!("settings: {:?}", settings);
+        // port.set_timeout(Duration::from_millis(100000))?;
         Ok(Self { port })
     }
 }
 
 impl<const BAUDRATE: u32> SerialPort for UnixSerialPort<BAUDRATE> {
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), SerialError> {
-        self.port.write(bytes)?;
+        let res = self.port.write(bytes)?;
+        if res != bytes.len() {
+            anyhow::bail!("Could not write all bytes");
+        }
         // manual flow control, if necessary
         // self.set_timeout(Self::BYTE_DURATION * cmd.len() as u32);
         Ok(())
