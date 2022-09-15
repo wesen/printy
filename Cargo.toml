@@ -20,6 +20,10 @@ font = ["dep:fontdue", "raqote"]
 name = "printy"
 required-features = ["build-binary"]
 
+[[bin]]
+name = "bitmap"
+required-features = ["build-binary", "bitvec", "image", "font", "raqote"]
+
 [dependencies]
 anyhow = { version = "1.0.64", default-features = false, features = ["std"] }
 chrono = "0.4.22"
